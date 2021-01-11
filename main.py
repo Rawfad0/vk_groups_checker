@@ -140,7 +140,7 @@ class CheckVkGroups:
     def extract_user_groups(self, user_id,
                             path='full_group_list.txt',
                             blacklist_path='black_group_list.txt'):
-        black_list = DataBase(blacklist_path)
+        black_list = DataBase(blacklist_path).data
         resp = self.api('groups.get',
                         {'user_id': user_id, 'extended': '1'},
                         self.user_token).json()
@@ -284,9 +284,7 @@ TODO:
 
 6) Нормальная обработка исключений
 
-7) +Нормальное извлечение short_name из user_url
-
-8) +Сделать UI класс
+7) Написать тип исключения для except в CheckVkGroups.api()
 
 
 """
