@@ -96,7 +96,6 @@ class CheckVkGroups:
                                f'{parameters}&'
                                f'access_token={token}&'
                                f'v={self.api_version}')
-                print()
                 break
             except:
                 time.sleep(1)
@@ -106,7 +105,11 @@ class CheckVkGroups:
         return resp
 
     def get_user_id(self, user_url):       # get user_url return user_id
-        user_url = user_url[user_url.index('https://vk.com/') + 15:]
+        if user_url.startswith('https://'):
+            user_url = user_url[8:]
+        if user_url.startswith('vk.com/'):
+            user_url = user_url[7:]
+
         resp = self.api('users.get',
                         {'user_ids': user_url},
                         self.service_token).json()
@@ -118,6 +121,11 @@ class CheckVkGroups:
 
     def get_group_id_and_name(self, group_url):
         group_url = group_url[group_url.index('https://vk.com/') + 15:]
+        if group_url.startswith('https://'):
+            group_url = group_url[8:]
+        if group_url.startswith('vk.com/'):
+            group_url = group_url[7:]
+
         resp = self.api('groups.getById',
                         {'group_id': group_url},
                         self.service_token).json()
@@ -173,94 +181,100 @@ class CheckVkGroups:
         print(count)
 
 
-def check_user_groups(checker, mode2path):
-    user_url = input('User url [vk.com/id000]: \n')
-    mode = input('Mode [s(short)/f(full)]: \n')
-    user_id = checker.get_user_id(user_url)             # получение user_id из url
-    print()
+class UserInterface:
 
-    if mode in mode2path:
-        checker.check_groups(user_id, mode2path[mode])
-    else:
-        print('Unknown mode')
-    print('.')
+    def __init__(self):
+        settings = DataBase('settings.txt').data
+        service_token = settings[0]
+        user_token = settings[1]
+        api_version = settings[2]
 
+        self.checker = CheckVkGroups(service_token, user_token, api_version)
 
-def add_groups_to_list(checker, mode2path):
-    mode = input('Mode [s(short)/f(full)]: \n')
-    # url_amount = int(input('Amount: '))
-    print('Enter groups url (until "end"): ')
+        self.mode2path = {'s': 'short_group_list.txt',
+                          'f': 'full_group_list.txt'}
 
-    if mode in mode2path:
-        data_path = mode2path[mode]
-    else:
-        print('Unknown mode')
-        print('.')
-        return 0
+    def check_user_groups(self):
+        user_url = input('User url [vk.com/id000]: \n')
+        mode = input('Mode [s(short)/f(full)]: \n')
+        user_id = self.checker.get_user_id(user_url)             # получение user_id из url
+        print()
 
-    url = input()
-    while url != 'end':
-        checker.add_line(data_path, url)
-        url = input()
-    print('.')
-
-
-def extract_user_groups_to_list(checker, mode2path):
-    mode = input('Mode [s(short)/f(full)]: \n')
-    user_url = input('User url [vk.com/id000]: \n')
-    user_id = checker.get_user_id(user_url)
-    # if user_id == 'error':
-    #     print('Extraction failed: error with user_id')
-    # else:
-    if mode in mode2path:
-        checker.extract_user_groups(user_id, mode2path[mode])
-    else:
-        print('Unknown mode')
-    print('.')
-
-
-def print_documentation():
-    documentation = DataBase('documentation.txt')
-    documentation.print_all_lines()
-
-
-def user_interface():
-    settings = DataBase('settings.txt').data
-    service_token = settings[0]
-    user_token = settings[1]
-    api_version = settings[2]
-
-    checker = CheckVkGroups(service_token, user_token, api_version)
-
-    mode2path = {'s': 'short_group_list.txt',
-                 'f': 'full_group_list.txt'}
-    # commands = {'check': check_user_groups(explorer),
-    #             'add': add_groups_to_list(explorer),
-    #             'extract': extract_user_groups_to_list(explorer),
-    #             'help': print_documentation()}
-    while True:
-        command = input()
-        if command == 'check':
-            check_user_groups(checker, mode2path)
-        elif command == 'add':
-            add_groups_to_list(checker, mode2path)
-        elif command == 'extract':
-            extract_user_groups_to_list(checker, mode2path)
-        elif command == 'help':
-            print_documentation()
+        if mode in self.mode2path:
+            self.checker.check_groups(user_id, self.mode2path[mode])
         else:
-            print('Unknown command. To see a list of commands type "help".')
+            print('Unknown mode')
+        print('.')
+
+    def add_groups_to_list(self):
+        mode = input('Mode [s(short)/f(full)]: \n')
+        # url_amount = int(input('Amount: '))
+        print('Enter groups url (until "end"): ')
+
+        if mode in self.mode2path:
+            data_path = self.mode2path[mode]
+        else:
+            print('Unknown mode')
+            print('.')
+            return 0
+
+        url = input()
+        while url != 'end':
+            self.checker.add_line(data_path, url)
+            url = input()
+        print('.')
+
+    def extract_user_groups_to_list(self):
+        mode = input('Mode [s(short)/f(full)]: \n')
+        user_url = input('User url [vk.com/id000]: \n')
+        user_id = self.checker.get_user_id(user_url)
+        # if user_id == 'error':
+        #     print('Extraction failed: error with user_id')
+        # else:
+        if mode in self.mode2path:
+            self.checker.extract_user_groups(user_id, self.mode2path[mode])
+        else:
+            print('Unknown mode')
+        print('.')
+
+    @staticmethod
+    def print_documentation():
+        documentation = DataBase('documentation.txt')
+        documentation.print_all_lines()
+
+    def main(self):
+        # commands = {'check': check_user_groups(explorer),
+        #             'add': add_groups_to_list(explorer),
+        #             'extract': extract_user_groups_to_list(explorer),
+        #             'help': print_documentation()}
+        while True:
+            command = input()
+            if command == 'check':
+                self.check_user_groups()
+            elif command == 'add':
+                self.add_groups_to_list()
+            elif command == 'extract':
+                self.extract_user_groups_to_list()
+            elif command == 'help':
+                self.print_documentation()
+            else:
+                print('Unknown command. To see a list of commands type "help".')
+
+
+def main():
+    ui = UserInterface()
+    ui.main()
 
 
 if __name__ == '__main__':
-    user_interface()
+    main()
 
 """
 TODO:
 
 1) Вызов команды с флагами на одной строке
 
-2) Документация к UI
+2) +Документация к UI
 
 3) Заменить мерзкие перебирания через условные опреаторы на словари
 
@@ -270,7 +284,9 @@ TODO:
 
 6) Нормальная обработка исключений
 
-7) Извлечение short_name из user_url
+7) +Нормальное извлечение short_name из user_url
+
+8) +Сделать UI класс
 
 
 """
