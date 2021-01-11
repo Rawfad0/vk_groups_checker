@@ -97,9 +97,9 @@ class CheckVkGroups:
                                f'access_token={token}&'
                                f'v={self.api_version}')
                 break
-            except:
+            except Exception as ex:
                 time.sleep(1)
-                print('ConnectionError?')
+                print('ConnectionError?', ex)
         if 'error' in resp.json():
             print(f'Error in api:\n{resp.json()["error"]["error_msg"]}')
         return resp
@@ -245,33 +245,28 @@ class UserInterface:
                 else:
                     print('Unknown mode')
         else:
-            print('Invalid command: expected 2 command sections.')
+            print('Invalid command: expected 3 command sections.')
         print('.')
 
     @staticmethod
-    def print_documentation():
+    def print_documentation(full_command):
+        if len(full_command) == 1:                         # просто заглушка
+            pass
         documentation = DataBase('documentation.txt')
         documentation.print_all_lines()
         print('.')
 
     def main(self):
-        # commands = {'check': check_user_groups(explorer),
-        #             'add': add_groups_to_list(explorer),
-        #             'extract': extract_user_groups_to_list(explorer),
-        #             'help': print_documentation()}
+        commands = {'check': self.check_user_groups,
+                    'add': self.add_groups_to_list,
+                    'extract': self.extract_user_groups_to_list,
+                    'help': self.print_documentation}
         while True:
             full_command = input().split()
-
             command = full_command[0]
 
-            if command == 'check':
-                self.check_user_groups(full_command)
-            elif command == 'add':
-                self.add_groups_to_list(full_command)
-            elif command == 'extract':
-                self.extract_user_groups_to_list(full_command)
-            elif command == 'help':
-                self.print_documentation()
+            if command in commands:
+                commands[command](full_command)
             else:
                 print('Unknown command. To see a list of commands type "help".')
 
@@ -285,9 +280,8 @@ if __name__ == '__main__':
     main()
 
 """
-TODO:
+TDO:
 
-Заменить мерзкие перебирания через условные опреаторы на словари
 
 Добавить возможность добавления пользовательских модов через настройки
 
