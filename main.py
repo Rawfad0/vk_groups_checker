@@ -194,53 +194,65 @@ class UserInterface:
         self.mode2path = {'s': 'short_group_list.txt',
                           'f': 'full_group_list.txt'}
 
-    def check_user_groups(self):
-        user_url = input('User url [vk.com/id000]: \n')
-        mode = input('Mode [s(short)/f(full)]: \n')
-        user_id = self.checker.get_user_id(user_url)             # получение user_id из url
-        print()
+    def check_user_groups(self, full_command):
+        if len(full_command) == 3:
+            mode = full_command[1]
+            user_url = full_command[2]
 
-        if mode in self.mode2path:
-            self.checker.check_groups(user_id, self.mode2path[mode])
+            user_id = self.checker.get_user_id(user_url)             # получение user_id из url
+            if user_id == 'error':
+                print('Invalid user url')
+            else:
+                print()
+
+                if mode in self.mode2path:
+                    self.checker.check_groups(user_id, self.mode2path[mode])
+                else:
+                    print('Unknown mode')
         else:
-            print('Unknown mode')
+            print('Invalid command: expected 3 command sections.')
         print('.')
 
-    def add_groups_to_list(self):
-        mode = input('Mode [s(short)/f(full)]: \n')
-        # url_amount = int(input('Amount: '))
-        print('Enter groups url (until "end"): ')
+    def add_groups_to_list(self, full_command):
+        if len(full_command) == 2:
+            mode = full_command[1]
+            # url_amount = int(input('Amount: '))
+            print('Enter groups url (until "end"): ')
 
-        if mode in self.mode2path:
-            data_path = self.mode2path[mode]
+            if mode in self.mode2path:
+                data_path = self.mode2path[mode]
+
+                url = input()
+                while url != 'end':
+                    self.checker.add_line(data_path, url)
+                    url = input()
+            else:
+                print('Unknown mode')
         else:
-            print('Unknown mode')
-            print('.')
-            return 0
-
-        url = input()
-        while url != 'end':
-            self.checker.add_line(data_path, url)
-            url = input()
+            print('Invalid command: expected 2 command sections.')
         print('.')
 
-    def extract_user_groups_to_list(self):
-        mode = input('Mode [s(short)/f(full)]: \n')
-        user_url = input('User url [vk.com/id000]: \n')
-        user_id = self.checker.get_user_id(user_url)
-        # if user_id == 'error':
-        #     print('Extraction failed: error with user_id')
-        # else:
-        if mode in self.mode2path:
-            self.checker.extract_user_groups(user_id, self.mode2path[mode])
+    def extract_user_groups_to_list(self, full_command):
+        if len(full_command) == 3:
+            mode = full_command[1]
+            user_url = full_command[2]
+            user_id = self.checker.get_user_id(user_url)
+            if user_id == 'error':
+                print('Extraction failed: error with user_id')
+            else:
+                if mode in self.mode2path:
+                    self.checker.extract_user_groups(user_id, self.mode2path[mode])
+                else:
+                    print('Unknown mode')
         else:
-            print('Unknown mode')
+            print('Invalid command: expected 2 command sections.')
         print('.')
 
     @staticmethod
     def print_documentation():
         documentation = DataBase('documentation.txt')
         documentation.print_all_lines()
+        print('.')
 
     def main(self):
         # commands = {'check': check_user_groups(explorer),
@@ -248,13 +260,16 @@ class UserInterface:
         #             'extract': extract_user_groups_to_list(explorer),
         #             'help': print_documentation()}
         while True:
-            command = input()
+            full_command = input().split()
+
+            command = full_command[0]
+
             if command == 'check':
-                self.check_user_groups()
+                self.check_user_groups(full_command)
             elif command == 'add':
-                self.add_groups_to_list()
+                self.add_groups_to_list(full_command)
             elif command == 'extract':
-                self.extract_user_groups_to_list()
+                self.extract_user_groups_to_list(full_command)
             elif command == 'help':
                 self.print_documentation()
             else:
