@@ -7,7 +7,7 @@ except ModuleNotFoundError:
 
 if not os.path.isfile('settings.txt'):
     with open('settings.txt', 'w') as f:
-        f.write(input("Service token:\n") + '\n')
+        f.write(input('Service token:\n') + '\n')
         f.write(input('User token:\n') + '\n')
         f.write(input('Api version:\n') + '\n')
 
@@ -84,8 +84,9 @@ class CheckVkGroups:
 
     @staticmethod
     def print_group(line):
-        group_id = line.split('::')[0]
-        group_name = line.split('::')[1]
+        line = line.split('::')
+        group_id = line[0]
+        group_name = line[1]
         print(f'{group_name}\nhttps://vk.com/public{group_id}\n')
 
     def api(self, method, parameters, token):
@@ -120,7 +121,6 @@ class CheckVkGroups:
         return user_id
 
     def get_group_id_and_name(self, group_url):
-        group_url = group_url[group_url.index('https://vk.com/') + 15:]
         if group_url.startswith('https://'):
             group_url = group_url[8:]
         if group_url.startswith('vk.com/'):
@@ -154,30 +154,24 @@ class CheckVkGroups:
                         {'group_id': group_id, 'user_id': user_id},
                         self.service_token).json()
 
-        error_to_delete = ['Access to group denied: access to the group members is denied',
-                           'Access denied: no access to this group']
-        if 'error' in resp:
-            if resp['error']['error_msg'] in error_to_delete:
-                return 'delete'
-            return 'error'
-
-        return resp['response']
+        return resp
 
     def check_groups(self, user_id, path, blacklist_path='black_group_list.txt'):
         data = DataBase(path).data
-        count = 0                                       # счетчик соответствующих групп
+        error_to_delete = ['Access to group denied: access to the group members is denied',
+                           'Access denied: no access to this group']
+        count = 0                                           # счетчик соответствующих групп
         for line in data:
             group_id = line.split('::')[0]
             resp = self.check_group(group_id, user_id)
-            if resp == 'delete':
-                update_base(blacklist_path, [line])     # запоминание проблемной группы, не будет добавлена повторно
-                remove_line(path, line)
-                print(f'Deleted: {line}\n')
-            elif resp:
+            if 'error' in resp:
+                if resp['error']['error_msg'] in error_to_delete:
+                    update_base(blacklist_path, [line])     # запоминание проблемной группы, не будет добавлена повторно
+                    remove_line(path, line)
+                    print(f'Deleted: {line}\n')
+            elif resp['response']:
                 count += 1
                 self.print_group(line)
-            elif resp == 'error':
-                pass
         print(count)
 
 
@@ -280,7 +274,7 @@ if __name__ == '__main__':
     main()
 
 """
-TDO:
+ToDo:
 
 
 Добавить возможность добавления пользовательских модов через настройки
@@ -289,7 +283,9 @@ TDO:
 
 Нормальная обработка исключений
 
-Написать тип исключения для except в CheckVkGroups.api()
+В check_group сделать аккумулирование групп и возврат их в UI
+
+Перенести print в UI
 
 
 """
