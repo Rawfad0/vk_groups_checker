@@ -9,6 +9,7 @@ if not os.path.isfile('settings.txt'):
     with open('settings.txt', 'w') as f:
         f.write(input('Service token:\n') + '\n')
         f.write(input('User token:\n') + '\n')
+        f.write(input('Group token:\n') + '\n')
         f.write(input('Api version:\n') + '\n')
 
 
@@ -77,10 +78,12 @@ def remove_line(path, line):
 
 class CheckVkGroups:
 
-    def __init__(self, service_token, user_token, api_version):
-        self.service_token = service_token
-        self.user_token = user_token
-        self.api_version = api_version
+    def __init__(self):
+        settings = DataBase('settings.txt').data
+        self.service_token = settings[0]
+        self.user_token = settings[1]
+        self.group_token = settings[2]
+        self.api_version = settings[3]
 
     @staticmethod
     def print_group(line):
@@ -148,43 +151,66 @@ class CheckVkGroups:
                  if f'{group["id"]}::{group["name"]}' not in black_list]
         update_base(path, lines)
 
-    # Возвращает информацию о том, является ли пользователь участником сообщества.
-    def check_group(self, group_id, user_id):
-        resp = self.api('groups.isMember',
-                        {'group_id': group_id, 'user_id': user_id},
-                        self.service_token).json()
-
-        return resp
+    @staticmethod
+    def code_assembler(data_slice, user_id):
+        id_list = [line.split('::')[0] for line in data_slice]
+        id_list = '", "'.join(id_list)
+        code_0 = f'var a = (["{id_list}"]);'
+        code_1 = """
+        var b = ([]);
+        var i = 0;
+        while (i < """
+        code_2 = """) {
+            b.push(API.groups.isMember({"group_id": a[i], "user_id": """
+        code_3 = """}));
+            i = i - -1;
+        }
+        return b;"""
+        code = code_0 + code_1 + f'{len(data_slice)}' + code_2 + str(user_id) + code_3
+        return code
 
     def check_groups(self, user_id, path, blacklist_path='black_group_list.txt'):
         data = DataBase(path).data
         error_to_delete = ['Access to group denied: access to the group members is denied',
                            'Access denied: no access to this group']
-        count = 0                                           # счетчик соответствующих групп
-        for line in data:
-            group_id = line.split('::')[0]
-            resp = self.check_group(group_id, user_id)
+        counter = 0
+        slice_quantity = len(data) // 25            # т. к. в execute выполняется максимум 25 запросов api
+        for slice_number in range(slice_quantity + 1):
+            if slice_number < slice_quantity:       # если номер среза меньше количества полных срезов, то есть 25 строк
+                data_slice = data[slice_number * 25:(slice_number + 1) * 25]
+            elif slice_number == slice_quantity:    # последний срез, оставшиеся строки
+                data_slice = data[slice_quantity * 25:]
+            else:
+                return 'error'
+
+            code = self.code_assembler(data_slice, user_id)     # сборка кода для api
+            resp = self.api('execute',
+                            {'code': code},
+                            self.group_token).json()
+
             if 'error' in resp:
-                if resp['error']['error_msg'] in error_to_delete:
-                    update_base(blacklist_path, [line])     # запоминание проблемной группы, не будет добавлена повторно
-                    remove_line(path, line)
-                    print(f'Deleted: {line}\n')
-            elif resp['response']:
-                count += 1
-                self.print_group(line)
-        print(count)
+                print('error', resp)
+            elif ('execute_errors' in resp) and (resp['execute_errors'][0]['error_msg'] in error_to_delete):
+                line = data_slice[[str(i) for i in resp['response']].index('False')]  # перевод в строку для нахождения
+                print(f'Delete error: \n{line}\n')          # вывод
+                update_base(blacklist_path, [line])     # запоминание
+                remove_line(path, line)                 # удаление
+            else:
+                # print(resp)
+                answers = resp['response']      # извлечение списка ответов из json
+                for i in range(len(answers)):
+                    if answers[i]:
+                        counter += 1
+                        line = data_slice[i].split('::')
+                        print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
+            time.sleep(0.051)                    # метод execute может выполняться только 20 раз в секунду (для групп)
+        print(counter)
 
 
 class UserInterface:
 
     def __init__(self):
-        settings = DataBase('settings.txt').data
-        service_token = settings[0]
-        user_token = settings[1]
-        api_version = settings[2]
-
-        self.checker = CheckVkGroups(service_token, user_token, api_version)
-
+        self.checker = CheckVkGroups()
         self.mode2path = {'s': 'short_group_list.txt',
                           'f': 'full_group_list.txt'}
 
@@ -287,9 +313,11 @@ ToDo:
 
 Перенести print в UI
 
-Сделать функцию очистки списка от маленьких групп
+Сделать функцию очистки списка от мелких групп
 
 Сделать доступ к программе через бота
+
+Сделать прогресс бар
 
 
 """
