@@ -190,19 +190,24 @@ class CheckVkGroups:
 
             if 'error' in resp:
                 print('error', resp)
-            elif ('execute_errors' in resp) and (resp['execute_errors'][0]['error_msg'] in error_to_delete):
-                line = data_slice[[str(i) for i in resp['response']].index('False')]  # перевод в строку для нахождения
-                print(f'Delete error: \n{line}\n')          # вывод
-                update_base(blacklist_path, [line])     # запоминание
-                remove_line(path, line)                 # удаление
-            else:
-                # print(resp)
-                answers = resp['response']      # извлечение списка ответов из json
-                for i in range(len(answers)):
-                    if answers[i]:
-                        counter += 1
-                        line = data_slice[i].split('::')
-                        print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
+                continue
+            elif 'execute_errors' in resp and resp['execute_errors'][0]['error_msg'] in error_to_delete:
+                resp_str = [str(i) for i in resp['response']]
+                for i in range(resp_str.count('False')):        # обработка каждой ошибки на удаление
+                    error_id = resp_str.index('False')          # нахождение индекса строки
+                    line = data_slice[error_id]
+                    print(f'Delete error: \n{line}\n')          # вывод
+                    update_base(blacklist_path, [line])         # запоминание
+                    remove_line(path, line)                     # удаление из списка-файла
+                    resp_str.remove('False')                    # удаление из списка-ответа
+                resp['response'] = [int(i) for i in resp_str]   # возвращение списка в начальный вид без False
+            # print(resp)
+            answers = resp['response']      # извлечение списка ответов из json
+            for i in range(len(answers)):
+                if answers[i]:
+                    counter += 1
+                    line = data_slice[i].split('::')
+                    print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
             time.sleep(0.051)                    # метод execute может выполняться только 20 раз в секунду (для групп)
         print(counter)
 
