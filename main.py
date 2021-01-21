@@ -85,13 +85,6 @@ class CheckVkGroups:
         self.group_token = settings[2]
         self.api_version = settings[3]
 
-    @staticmethod
-    def print_group(line):
-        line = line.split('::')
-        group_id = line[0]
-        group_name = line[1]
-        print(f'{group_name}\nhttps://vk.com/public{group_id}\n')
-
     def api(self, method, parameters, token):
         parameters = '&'.join([f'{parameter}={parameters[parameter]}' for parameter in parameters])
         while True:
@@ -104,8 +97,6 @@ class CheckVkGroups:
             except Exception as ex:
                 time.sleep(1)
                 print('ConnectionError?', ex)
-        if 'error' in resp.json():
-            print(f'Error in api:\n{resp.json()["error"]["error_msg"]}')
         return resp
 
     def get_user_id(self, user_url):       # get user_url return user_id
@@ -118,7 +109,6 @@ class CheckVkGroups:
                         {'user_ids': user_url},
                         self.service_token).json()
         if 'error' in resp:
-            print(f'Error in user_id:\n{resp}')
             return 'error'
         user_id = resp['response'][0]['id']
         return user_id
@@ -173,7 +163,7 @@ class CheckVkGroups:
         data = DataBase(path).data
         error_to_delete = ['Access to group denied: access to the group members is denied',
                            'Access denied: no access to this group']
-        counter = 0
+        groups = []
         slice_quantity = len(data) // 25            # т. к. в execute выполняется максимум 25 запросов api
         for slice_number in range(slice_quantity + 1):
             if slice_number < slice_quantity:       # если номер среза меньше количества полных срезов, то есть 25 строк
@@ -199,17 +189,18 @@ class CheckVkGroups:
                     print(f'Delete error: \n{line}\n')          # вывод
                     update_base(blacklist_path, [line])         # запоминание
                     remove_line(path, line)                     # удаление из списка-файла
+                    data_slice.remove(line)                     # удаление из списка-среза
                     resp_str.remove('False')                    # удаление из списка-ответа
                 resp['response'] = [int(i) for i in resp_str]   # возвращение списка в начальный вид без False
             # print(resp)
-            answers = resp['response']      # извлечение списка ответов из json
+            answers = resp['response']                          # извлечение списка ответов из json
             for i in range(len(answers)):
                 if answers[i]:
-                    counter += 1
-                    line = data_slice[i].split('::')
-                    print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
-            time.sleep(0.051)                    # метод execute может выполняться только 20 раз в секунду (для групп)
-        print(counter)
+                    groups.append(data_slice[i])
+                    # line = data_slice[i].split('::')
+                    # print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
+            time.sleep(0.051)                    # метод execute может выполняться только 20 раз в секунду (для группы)
+        return groups
 
 
 class UserInterface:
@@ -218,6 +209,15 @@ class UserInterface:
         self.checker = CheckVkGroups()
         self.mode2path = {'s': 'short_group_list.txt',
                           'f': 'full_group_list.txt'}
+
+    @staticmethod
+    def print_groups(groups):
+        for group in groups:
+            line = group.split('::')
+            group_id = line[0]
+            group_name = line[1]
+            print(f'{group_name}\nhttps://vk.com/public{group_id}\n')
+        print(len(groups))
 
     def check_user_groups(self, full_command):
         if len(full_command) == 3:
@@ -231,7 +231,8 @@ class UserInterface:
                 print()
 
                 if mode in self.mode2path:
-                    self.checker.check_groups(user_id, self.mode2path[mode])
+                    groups = self.checker.check_groups(user_id, self.mode2path[mode])
+                    self.print_groups(groups)
                 else:
                     print('Unknown mode')
         else:
@@ -310,12 +311,8 @@ ToDo:
 
 Добавить возможность добавления пользовательских модов через настройки
 
-Убрать волочение перехваченных ошибок через несколько функций
-
-Нормальная обработка исключений
-
 В check_group сделать аккумулирование групп и возврат их в UI
-
+aaaaaa
 Перенести print в UI
 
 Сделать функцию очистки списка от мелких групп
