@@ -76,7 +76,7 @@ def remove_line(path, line):
     base.save_database_changes()
 
 
-class CheckVkGroups:
+class ApiManager:
 
     def __init__(self):
         settings = DataBase('settings.txt').data
@@ -93,7 +93,10 @@ class CheckVkGroups:
                                f'{parameters}&'
                                f'access_token={token}&'
                                f'v={self.api_version}')
-                break
+                if 'error' in resp.json() and resp.json()['error']['error_code'] == 6:
+                    pass
+                else:
+                    break
             except Exception as ex:
                 time.sleep(1)
                 print('ConnectionError?', ex)
@@ -126,17 +129,33 @@ class CheckVkGroups:
         group_name = resp['response'][0]['name']
         return group_id, group_name
 
+    def extract_user_groups(self, user_id):
+        resp = self.api('groups.get',
+                        {'user_id': user_id, 'extended': '1'},
+                        self.user_token).json()
+        return resp
+
+    def execute(self, code):
+        resp = self.api('execute',
+                        {'code': code},
+                        self.group_token).json()
+        return resp
+
+
+class CheckVkGroups:
+
+    def __init__(self):
+        self.api = ApiManager()
+
     def add_line(self, path, group_url):
-        group_id, group_name = self.get_group_id_and_name(group_url)
+        group_id, group_name = self.api.get_group_id_and_name(group_url)
         update_base(path, [f'{group_id}::{group_name}'])
 
     def extract_user_groups(self, user_id,
                             path='full_group_list.txt',
                             blacklist_path='black_group_list.txt'):
         black_list = DataBase(blacklist_path).data
-        resp = self.api('groups.get',
-                        {'user_id': user_id, 'extended': '1'},
-                        self.user_token).json()
+        resp = self.api.extract_user_groups(user_id)
         lines = [f'{group["id"]}::{group["name"]}' for group in resp['response']['items']
                  if f'{group["id"]}::{group["name"]}' not in black_list]
         update_base(path, lines)
@@ -162,7 +181,7 @@ class CheckVkGroups:
     def check_groups(self, user_id, path, blacklist_path='black_group_list.txt'):
         data = DataBase(path).data
         error_to_delete = ['Access to group denied: access to the group members is denied',
-                           'Access denied: no access to this group']
+                           'Access denied: no access to this group']    # ошибки, которые ведут к удалению из списка
         groups = []
         slice_quantity = len(data) // 25            # т. к. в execute выполняется максимум 25 запросов api
         for slice_number in range(slice_quantity + 1):
@@ -174,9 +193,7 @@ class CheckVkGroups:
                 return 'error'
 
             code = self.code_assembler(data_slice, user_id)     # сборка кода для api
-            resp = self.api('execute',
-                            {'code': code},
-                            self.group_token).json()
+            resp = self.api.execute(code)
 
             if 'error' in resp:
                 print('error', resp)
@@ -186,7 +203,7 @@ class CheckVkGroups:
                 for i in range(resp_str.count('False')):        # обработка каждой ошибки на удаление
                     error_id = resp_str.index('False')          # нахождение индекса строки
                     line = data_slice[error_id]
-                    print(f'Delete error: \n{line}\n')          # вывод
+                    print(f'Delete: \n{line}\n')                # вывод
                     update_base(blacklist_path, [line])         # запоминание
                     remove_line(path, line)                     # удаление из списка-файла
                     data_slice.remove(line)                     # удаление из списка-среза
@@ -199,13 +216,13 @@ class CheckVkGroups:
                     groups.append(data_slice[i])
                     # line = data_slice[i].split('::')
                     # print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
-            time.sleep(0.051)                    # метод execute может выполняться только 20 раз в секунду (для группы)
         return groups
 
 
 class UserInterface:
 
     def __init__(self):
+        self.api = ApiManager()
         self.checker = CheckVkGroups()
         self.mode2path = {'s': 'short_group_list.txt',
                           'f': 'full_group_list.txt'}
@@ -224,10 +241,11 @@ class UserInterface:
             mode = full_command[1]
             user_url = full_command[2]
 
-            user_id = self.checker.get_user_id(user_url)             # получение user_id из url
+            user_id = self.api.get_user_id(user_url)             # получение user_id из url
             if user_id == 'error':
                 print('Invalid user url')
             else:
+                print(user_id)
                 print()
 
                 if mode in self.mode2path:
@@ -262,7 +280,7 @@ class UserInterface:
         if len(full_command) == 3:
             mode = full_command[1]
             user_url = full_command[2]
-            user_id = self.checker.get_user_id(user_url)
+            user_id = self.api.get_user_id(user_url)
             if user_id == 'error':
                 print('Extraction failed: error with user_id')
             else:
@@ -310,10 +328,6 @@ ToDo:
 
 
 Добавить возможность добавления пользовательских модов через настройки
-
-В check_group сделать аккумулирование групп и возврат их в UI
-aaaaaa
-Перенести print в UI
 
 Сделать функцию очистки списка от мелких групп
 
