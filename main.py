@@ -1,16 +1,27 @@
 import os.path
 import time
+import random
 try:
     import requests as req
 except ModuleNotFoundError:
-    print('Install requests lib using "pip install requests"')
+    print('Install requests lib using "pip install requests" or "pip3 install requests".')
 
-if not os.path.isfile('settings.txt'):
-    with open('settings.txt', 'w') as f:
-        f.write(input('Service token:\n') + '\n')
-        f.write(input('User token:\n') + '\n')
-        f.write(input('Group token:\n') + '\n')
-        f.write(input('Api version:\n') + '\n')
+import os
+if not os.path.isfile('settings.py'):
+    with open('settings.py', 'w') as f:
+        template = ['service_token = ',
+                    'user_token = ',
+                    'group_id = ',
+                    'group_token = ']
+        for template_line in template:
+            f.write(template_line + '"' + input(template_line) + '"' + '\n')
+        f.write('api_version = "5.130"')
+        f.write('mode2path = {"b": "black_group_list.txt",\n' +
+                '             "s": "short_group_list.txt",\n' +
+                '             "f": "full_group_list.txt"}\n')
+
+if os.path.isfile('settings.py'):
+    import settings
 
 
 def create_file(path):
@@ -79,11 +90,11 @@ def remove_line(path, line):
 class ApiManager:
 
     def __init__(self):
-        settings = DataBase('settings.txt').data
-        self.service_token = settings[0]
-        self.user_token = settings[1]
-        self.group_token = settings[2]
-        self.api_version = settings[3]
+        self.service_token = settings.service_token
+        self.user_token = settings.user_token
+        self.group_id = settings.group_id
+        self.group_token = settings.group_token
+        self.api_version = settings.api_version
 
     def api(self, method, parameters, token):
         parameters = '&'.join([f'{parameter}={parameters[parameter]}' for parameter in parameters])
@@ -93,13 +104,21 @@ class ApiManager:
                                f'{parameters}&'
                                f'access_token={token}&'
                                f'v={self.api_version}')
-                if 'error' in resp.json() and resp.json()['error']['error_code'] == 6:
-                    pass
-                else:
+                try:
+                    if 'error' in resp.json() and resp.json()['error']['error_code'] == 6:
+                        pass
+                    else:
+                        break
+                except Exception as ex:
+                    print('Json error?', ex)
+                    # print(resp)
+                    # print(parameters, '\n\n')
                     break
             except Exception as ex:
-                time.sleep(1)
+                time.sleep(3)
                 print('ConnectionError?', ex)
+                # if ex == 'Expecting value: line 1 column 1 (char 0)':
+                #     print(resp)
         return resp
 
     def get_user_id(self, user_url):       # get user_url return user_id
@@ -140,6 +159,26 @@ class ApiManager:
                         {'code': code},
                         self.group_token).json()
         return resp
+
+    def get_long_poll_server(self):
+        group_id = self.get_group_id_and_name(self.group_id)[0]
+        resp = self.api('groups.getLongPollServer',
+                        {'group_id': group_id},
+                        self.group_token).json()
+        return resp
+
+    def message(self, target_user_id, message):
+        resp = self.api('messages.send',
+                        {'user_id': target_user_id, 'random_id': random.randint(1, 1000000), 'message': message},
+                        self.group_token).json()
+        return resp
+
+    def save_page(self, message, title):
+        resp = self.api('pages.save',
+                        {'text': message, 'group_id': self.group_id, 'title': title},
+                        self.user_token).json()
+        page_id = resp['response']
+        return page_id
 
 
 class CheckVkGroups:
@@ -224,44 +263,54 @@ class UserInterface:
     def __init__(self):
         self.api = ApiManager()
         self.checker = CheckVkGroups()
-        self.mode2path = {'s': 'short_group_list.txt',
-                          'f': 'full_group_list.txt'}
+        self.mode2path = settings.mode2path
+
+        resp = self.api.get_long_poll_server()
+        # здесь должна быть проверка ответа на ошибки
+        self.key = resp['response']['key']
+        self.server = resp['response']['server']
+        self.ts1 = resp['response']['ts']
+
+    def print(self, message, target_user_id):
+        resp = self.api.message(target_user_id, message)
+        print(resp)
 
     @staticmethod
-    def print_groups(groups):
+    def response_assembler(groups):
+        message = ''
         for group in groups:
-            line = group.split('::')
-            group_id = line[0]
-            group_name = line[1]
-            print(f'{group_name}\nhttps://vk.com/public{group_id}\n')
-        print(len(groups))
+            message += f'https://vk.com/public{group.split("::")[0]}\n'
+        message += str(len(groups))
+        return message.replace('&', '*a*').replace('#', '*ht*')
 
-    def check_user_groups(self, full_command):
+    def check_user_groups(self, full_command, target):
         if len(full_command) == 3:
             mode = full_command[1]
             user_url = full_command[2]
 
             user_id = self.api.get_user_id(user_url)             # получение user_id из url
             if user_id == 'error':
-                print('Invalid user url')
+                self.print('Invalid user url', target)
             else:
-                print(user_id)
-                print()
+                self.print(user_id, target)
 
                 if mode in self.mode2path:
-                    groups = self.checker.check_groups(user_id, self.mode2path[mode])
-                    self.print_groups(groups)
+                    groups = self.checker.check_groups(user_id, self.mode2path[mode])   # нахождение групп
+                    message = self.response_assembler(groups)                 # сбор текста для wiki-страницы
+                    page_id = self.api.save_page(message, user_id)            # создание wiki-страницы и получение ее id
+                    page_url = f'https://vk.com/page-201873635_{page_id}'     # сбор ссылки с помощью id wiki-страницы
+                    self.print(page_url,  target)                             # отправка ссылки сообщением
                 else:
-                    print('Unknown mode')
+                    self.print('Unknown mode', target)
         else:
-            print('Invalid command: expected 3 command sections.')
-        print('.')
+            self.print('Invalid command: expected 3 command sections.', target)
+        self.print('.', target)
 
-    def add_groups_to_list(self, full_command):
+    def add_groups_to_list(self, full_command, target):
         if len(full_command) == 2:
             mode = full_command[1]
             # url_amount = int(input('Amount: '))
-            print('Enter groups url (until "end"): ')
+            self.print('Enter groups url (until "end"): ', target)
 
             if mode in self.mode2path:
                 data_path = self.mode2path[mode]
@@ -271,48 +320,57 @@ class UserInterface:
                     self.checker.add_line(data_path, url)
                     url = input()
             else:
-                print('Unknown mode')
+                self.print('Unknown mode', target)
         else:
-            print('Invalid command: expected 2 command sections.')
-        print('.')
+            self.print('Invalid command: expected 2 command sections.', target)
+        self.print('.', target)
 
-    def extract_user_groups_to_list(self, full_command):
+    def extract_user_groups_to_list(self, full_command, target):
         if len(full_command) == 3:
             mode = full_command[1]
             user_url = full_command[2]
             user_id = self.api.get_user_id(user_url)
             if user_id == 'error':
-                print('Extraction failed: error with user_id')
+                self.print('Extraction failed: error with user_id', target)
             else:
                 if mode in self.mode2path:
                     self.checker.extract_user_groups(user_id, self.mode2path[mode])
                 else:
-                    print('Unknown mode')
+                    self.print('Unknown mode', target)
         else:
-            print('Invalid command: expected 3 command sections.')
-        print('.')
+            self.print('Invalid command: expected 3 command sections.', target)
+        self.print('.', target)
 
-    @staticmethod
-    def print_documentation(full_command):
+    def print_documentation(self, full_command, target):
         if len(full_command) == 1:                         # просто заглушка
             pass
         documentation = DataBase('documentation.txt')
         documentation.print_all_lines()
-        print('.')
+        self.print('.', target)
 
     def main(self):
         commands = {'check': self.check_user_groups,
-                    'add': self.add_groups_to_list,
+                    # 'add': self.add_groups_to_list,
                     'extract': self.extract_user_groups_to_list,
-                    'help': self.print_documentation}
+                    # 'help': self.print_documentation
+                    }
+        ts = self.ts1
         while True:
-            full_command = input().split()
+            while True:
+                resp = req.get(f'{self.server}?act=a_check&key={self.key}&ts={ts}&wait=25').json()
+                print(resp)
+                if len(resp['updates']) > 0:
+                    event = resp['updates'][0]['object']
+                    target = event['user_id']
+                    full_command = event['body'].split()
+                    ts = resp['ts']
+                    break
             command = full_command[0]
 
             if command in commands:
-                commands[command](full_command)
+                commands[command](full_command, target)
             else:
-                print('Unknown command. To see a list of commands type "help".')
+                self.print('Unknown command. To see a list of commands type "help".', target)
 
 
 def main():
@@ -327,13 +385,16 @@ if __name__ == '__main__':
 ToDo:
 
 
-Добавить возможность добавления пользовательских модов через настройки
+Многопоточный вызов execute-запросов
 
-Сделать функцию очистки списка от мелких групп
+Вынести CallBack-систему в отдельный класс
 
-Сделать доступ к программе через бота
+BugRep: при изменении группой названия, 
+    это принимается программой за новую группу,
+    что приводит к дублированию в базе.
+Fix1: использование нормальной СУБД
+Fix2: переход с формата 'id::name' на формат 'id', для уникализации строк
 
 Сделать прогресс бар
-
 
 """
