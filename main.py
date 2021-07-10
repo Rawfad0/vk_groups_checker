@@ -117,8 +117,6 @@ class ApiManager:
             except Exception as ex:
                 time.sleep(3)
                 print('ConnectionError?', ex)
-                # if ex == 'Expecting value: line 1 column 1 (char 0)':
-                #     print(resp)
         return resp
 
     def get_user_id(self, user_url):       # get user_url return user_id
@@ -176,8 +174,12 @@ class ApiManager:
     def save_page(self, message, title):
         resp = self.api('pages.save',
                         {'text': message, 'group_id': self.group_id, 'title': title},
-                        self.user_token).json()
-        page_id = resp['response']
+                        self.user_token)
+        try:  # иногда Response 414, из-за этого json'а нет
+            page_id = resp.json()['response']
+        except Exception as ex:
+            print(resp, '\n', ex)
+            page_id = 'error'
         return page_id
 
 
@@ -193,6 +195,7 @@ class CheckVkGroups:
     def extract_user_groups(self, user_id,
                             path='full_group_list.txt',
                             blacklist_path='black_group_list.txt'):
+        # вроде бы проверять наличие элемента в множестве быстрее чем в списке
         black_list = DataBase(blacklist_path).data
         resp = self.api.extract_user_groups(user_id)
         lines = [f'{group["id"]}::{group["name"]}' for group in resp['response']['items']
@@ -219,8 +222,8 @@ class CheckVkGroups:
 
     def check_groups(self, user_id, path, blacklist_path='black_group_list.txt'):
         data = DataBase(path).data
-        error_to_delete = ['Access to group denied: access to the group members is denied',
-                           'Access denied: no access to this group']    # ошибки, которые ведут к удалению из списка
+        error_to_delete = ['Access denied: no access to this group',    # ошибки, которые ведут к удалению из списка
+                           'Access to group denied: access to the group members is denied']
         groups = []
         slice_quantity = len(data) // 25            # т. к. в execute выполняется максимум 25 запросов api
         for slice_number in range(slice_quantity + 1):
@@ -238,21 +241,24 @@ class CheckVkGroups:
                 print('error', resp)
                 continue
             elif 'execute_errors' in resp and resp['execute_errors'][0]['error_msg'] in error_to_delete:
-                resp_str = [str(i) for i in resp['response']]
+                resp_str = [str(i) for i in resp['response']]   # перевод каждого элемента в строку
                 for i in range(resp_str.count('False')):        # обработка каждой ошибки на удаление
                     error_id = resp_str.index('False')          # нахождение индекса строки
-                    line = data_slice[error_id]
-                    print(f'Delete: \n{line}\n')                # вывод
-                    update_base(blacklist_path, [line])         # запоминание
+                    line = data_slice[error_id]                 # нахождение строки по индексу
+                    print(f'Delete: \n{line}\n')                # вывод удаленной строки
+                    update_base(blacklist_path, [line])         # занесение строки в черный список
                     remove_line(path, line)                     # удаление из списка-файла
                     data_slice.remove(line)                     # удаление из списка-среза
                     resp_str.remove('False')                    # удаление из списка-ответа
                 resp['response'] = [int(i) for i in resp_str]   # возвращение списка в начальный вид без False
             # print(resp)
             answers = resp['response']                          # извлечение списка ответов из json
-            for i in range(len(answers)):
-                if answers[i]:
-                    groups.append(data_slice[i])
+            for a_id, answer in enumerate(answers):             # обработка ответов
+                if answer:                                      # если значение ответа равно 1
+                    groups.append(data_slice[a_id])
+            # for i in range(len(answers)):
+            #     if answers[i]:
+            #         groups.append(data_slice[i])
                     # line = data_slice[i].split('::')
                     # print(f'{line[1]}\nhttps://vk.com/public{line[0]}\n')
         return groups
@@ -355,10 +361,16 @@ class UserInterface:
                     # 'help': self.print_documentation
                     }
         ts = self.ts1
+        key = self.key
         while True:
-            while True:
-                resp = req.get(f'{self.server}?act=a_check&key={self.key}&ts={ts}&wait=25').json()
+            while True:     # ожидание до события
+                resp = req.get(f'{self.server}?act=a_check&key={key}&ts={ts}&wait=25').json()
                 print(resp)
+                # остальные ошибки тоже нужно обработать
+                if 'failed' in resp and resp['failed'] == 2:  # 'failed':2 — истекло время действия ключа
+                    resp = self.api.get_long_poll_server()      # получение нового ключа
+                    key = resp['response']['key']
+                    continue
                 if len(resp['updates']) > 0:
                     event = resp['updates'][0]['object']
                     target = event['user_id']
